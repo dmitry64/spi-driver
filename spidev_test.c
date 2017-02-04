@@ -23,6 +23,7 @@ static uint8_t mode = 0x00;
 static uint8_t bits = 8;
 static uint32_t speed = 50000;
 static uint16_t delay = 100;
+static uint8_t glflag = 1;
 
 static void sendCommand(int fd, uint8_t commandByte, uint8_t length) {
 	uint8_t tx[2] = { commandByte, length };
@@ -38,9 +39,9 @@ static void sendCommand(int fd, uint8_t commandByte, uint8_t length) {
 		.cs_change = 1,
 	};
 
-	printf("[tx: 0x%02x len: 0x%02x]\n",tx[0],tx[1]);
+	//printf("[tx: 0x%02x len: 0x%02x]\n",tx[0],tx[1]);
 	int ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
-	printf("[rx: 0x%02x rx+: 0x%02x]\n",rx[0],rx[1]);
+	//printf("[rx: 0x%02x rx+: 0x%02x]\n",rx[0],rx[1]);
 
 	if (ret < 1)
 		pabort("can't send command message");	
@@ -102,7 +103,6 @@ static void getRegister(int fd, uint8_t reg, uint32_t length, uint8_t * dest) {
 	recvData(fd,length,dest);
 	
 	printf("Printing register length=%d :",length);
-	printf("\n==============================");
 	
 	for (int ret = 0; ret < length; ret++) {
 		if (!(ret % 32))
@@ -110,10 +110,10 @@ static void getRegister(int fd, uint8_t reg, uint32_t length, uint8_t * dest) {
 		printf("%.2X ", dest[ret]);
 	}
 	
-	printf("\n==============================\n");
+	printf("\n");
 }
 
-static void setRegister(int fd, uint8_t reg, uint32_t length, uint8_t * src) {
+static void setRegister(int fd, uint8_t reg,const uint32_t length, uint8_t * src) {
 	uint8_t byteLength = 0;
 	if(length>=255) {
 		byteLength = 0xff;
@@ -125,7 +125,22 @@ static void setRegister(int fd, uint8_t reg, uint32_t length, uint8_t * src) {
 	
 	sendData(fd,length,src);
 	
-	printf("Register write end length=%d \n",length);
+	//printf("Register write end length=%d \n",length);
+}
+
+static uint8_t setAndTestRegister(int fd, uint8_t reg,const uint32_t length, uint8_t * src) {
+	setRegister(fd,reg,length,src);
+	uint8_t result[length];
+	getRegister(fd,reg,length,result);
+	uint8_t status = 0;
+	for(uint32_t i=0; i<length; i++) {
+		if(src[i]!=result[i]) {
+			printf("======================Error!\n");
+			glflag = 0;
+			status = 1;
+		}
+	}
+	return status;
 }
 
 static void initSPI(int fd) {
@@ -162,8 +177,7 @@ int main(int argc, char *argv[])
 {
 	
 	int fd;
-	uint8_t glflag = 1;
-
+	
 	fd = open(device, O_RDWR);
 	initSPI(fd);
 
@@ -233,28 +247,59 @@ int main(int argc, char *argv[])
 		glflag = 0;
 	printf("Reading 0x00 register: 0x%02x\n",zeroes);
 	
-	for(int y=0; y<100; y++)
+	for(int y=0; y<3; y++)
 	for(int j=0; j<8; j++) {
 		uint8_t tvg[150];
 		for(int i=0; i<150; i++) {
 			tvg[i] = i + j;
 		}
-		setRegister(fd,0x40 + j,150,tvg);
-		uint8_t read_tvg[150];
-		getRegister(fd,0x40 + j,150,read_tvg);
-		uint8_t flag = 1;
-		for(int k=0; k<150; k++) {
-			if(tvg[k] != read_tvg[k]) {
-				flag = 0;
-				glflag = 0;
-			} 
-		}
-		if(flag) {
+
+		if(!setAndTestRegister(fd,0x40+j,150,tvg)) {
 			printf("\nRead OK!     \n");
 		} else {
 			printf("\n\n\nRead not OK	!\n");
 		}
 	}
+	uint8_t version = 0;
+	getRegister(fd,0x02,1,&version);
+	if(version!=0xAE){
+		glflag = 0;
+		printf("Version error!");
+	}
+	printf("Version: 0x%02x\n",version);
+	
+	uint8_t trg_cr_send = 0b00001000;
+	setAndTestRegister(fd,0x05,1,&trg_cr_send);
+	
+	uint8_t trg_ds_send = 0b00001111;
+	setAndTestRegister(fd,0x06,1,&trg_ds_send);
+
+	uint8_t trg_ts_send = 0b11110000;
+	setAndTestRegister(fd,0x07,1,&trg_ts_send);
+	
+	
+	for(int i=0; i<100;i++) {
+		uint8_t temp = i;
+		setAndTestRegister(fd,0x07,1,&temp);
+	}
+	
+	for(int i=0; i<100;i++) {
+		uint8_t temp = i;
+		setAndTestRegister(fd,0x06,1,&temp);
+	}
+	
+	for(int i=0; i<100;i++) {
+		uint8_t temp = 0;
+		setAndTestRegister(fd,0x05,1,&temp);
+	}
+	
+	printf("\nTesting channels table\n");
+	
+	for(int i=0; i<8*6;i++) {
+		uint8_t temp = 0x00;
+		setAndTestRegister(fd,0x10+i,1,&temp);
+	}
+	
 	
 	if(glflag) {
 		printf("\nGL Read OK!     \n");
