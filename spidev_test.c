@@ -18,10 +18,10 @@ static void pabort(const char *s)
 	abort();
 }
 
-static const char *device = "/dev/spidev0.1";
-static uint8_t mode;
+static const char *device = "/dev/spidev0.0";
+static uint8_t mode = 0x00;
 static uint8_t bits = 8;
-static uint32_t speed = 70000;
+static uint32_t speed = 50000;
 static uint16_t delay = 100;
 
 static void sendCommand(int fd, uint8_t commandByte, uint8_t length) {
@@ -41,8 +41,6 @@ static void sendCommand(int fd, uint8_t commandByte, uint8_t length) {
 	printf("[tx: 0x%02x len: 0x%02x]\n",tx[0],tx[1]);
 	int ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
 	printf("[rx: 0x%02x rx+: 0x%02x]\n",rx[0],rx[1]);
-	
-
 
 	if (ret < 1)
 		pabort("can't send command message");	
@@ -115,107 +113,26 @@ static void getRegister(int fd, uint8_t reg, uint32_t length, uint8_t * dest) {
 	printf("\n==============================\n");
 }
 
-
-
-static void print_usage(const char *prog)
-{
-	printf("Usage: %s [-DsbdlHOLC3]\n", prog);
-	puts("  -D --device   device to use (default /dev/spidev1.1)\n"
-	     "  -s --speed    max speed (Hz)\n"
-	     "  -d --delay    delay (usec)\n"
-	     "  -b --bpw      bits per word \n"
-	     "  -l --loop     loopback\n"
-	     "  -H --cpha     clock phase\n"
-	     "  -O --cpol     clock polarity\n"
-	     "  -L --lsb      least significant bit first\n"
-	     "  -C --cs-high  chip select active high\n"
-	     "  -3 --3wire    SI/SO signals shared\n");
-	exit(1);
-}
-
-static void parse_opts(int argc, char *argv[])
-{
-	while (1) {
-		static const struct option lopts[] = {
-			{ "device",  1, 0, 'D' },
-			{ "speed",   1, 0, 's' },
-			{ "delay",   1, 0, 'd' },
-			{ "bpw",     1, 0, 'b' },
-			{ "loop",    0, 0, 'l' },
-			{ "cpha",    0, 0, 'H' },
-			{ "cpol",    0, 0, 'O' },
-			{ "lsb",     0, 0, 'L' },
-			{ "cs-high", 0, 0, 'C' },
-			{ "3wire",   0, 0, '3' },
-			{ "no-cs",   0, 0, 'N' },
-			{ "ready",   0, 0, 'R' },
-			{ NULL, 0, 0, 0 },
-		};
-		int c;
-
-		c = getopt_long(argc, argv, "D:s:d:b:lHOLC3NR", lopts, NULL);
-
-		if (c == -1)
-			break;
-
-		switch (c) {
-		case 'D':
-			device = optarg;
-			break;
-		case 's':
-			speed = atoi(optarg);
-			break;
-		case 'd':
-			delay = atoi(optarg);
-			break;
-		case 'b':
-			bits = atoi(optarg);
-			break;
-		case 'l':
-			mode |= SPI_LOOP;
-			break;
-		case 'H':
-			mode |= SPI_CPHA;
-			break;
-		case 'O':
-			mode |= SPI_CPOL;
-			break;
-		case 'L':
-			mode |= SPI_LSB_FIRST;
-			break;
-		case 'C':
-			mode |= SPI_CS_HIGH;
-			break;
-		case '3':
-			mode |= SPI_3WIRE;
-			break;
-		case 'N':
-			mode |= SPI_NO_CS;
-			break;
-		case 'R':
-			mode |= SPI_READY;
-			break;
-		default:
-			print_usage(argv[0]);
-			break;
-		}
+static void setRegister(int fd, uint8_t reg, uint32_t length, uint8_t * src) {
+	uint8_t byteLength = 0;
+	if(length>=255) {
+		byteLength = 0xff;
+	} else {
+		byteLength = length;
 	}
+	
+	sendCommand(fd,reg | 0b10000000,byteLength);
+	
+	sendData(fd,length,src);
+	
+	printf("Register write end length=%d \n",length);
 }
 
-int main(int argc, char *argv[])
-{
+static void initSPI(int fd) {
 	int ret = 0;
-	int fd;
-
-	parse_opts(argc, argv);
-
-	fd = open(device, O_RDWR);
 	if (fd < 0)
 		pabort("can't open device");
 
-	/*
-	 * spi mode
-	 */
 	ret = ioctl(fd, SPI_IOC_WR_MODE, &mode);
 	if (ret == -1)
 		pabort("can't set spi mode");
@@ -224,9 +141,6 @@ int main(int argc, char *argv[])
 	if (ret == -1)
 		pabort("can't get spi mode");
 
-	/*
-	 * bits per word
-	 */
 	ret = ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
 	if (ret == -1)
 		pabort("can't set bits per word");
@@ -235,9 +149,6 @@ int main(int argc, char *argv[])
 	if (ret == -1)
 		pabort("can't get bits per word");
 
-	/*
-	 * max speed hz
-	 */
 	ret = ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
 	if (ret == -1)
 		pabort("can't set max speed hz");
@@ -245,21 +156,33 @@ int main(int argc, char *argv[])
 	ret = ioctl(fd, SPI_IOC_RD_MAX_SPEED_HZ, &speed);
 	if (ret == -1)
 		pabort("can't get max speed hz");
+}
+
+int main(int argc, char *argv[])
+{
+	
+	int fd;
+	uint8_t glflag = 1;
+
+	fd = open(device, O_RDWR);
+	initSPI(fd);
 
 	printf("spi mode: %d\n", mode);
 	printf("bits per word: %d\n", bits);
 	printf("max speed: %d Hz (%d KHz)\n", speed, speed/1000);
 
-	//transfer(fd);
-	
 	sendCommand(fd,0x00,0x01);
 	uint8_t zeroes = 0;
 	recvData(fd,1,&zeroes);
+	if(zeroes!=0x00)
+		glflag = 0;
 	printf("Reading 0x00 register: 0x%02x\n",zeroes);
 	
 	sendCommand(fd,0x01,0x01);
 	uint8_t ones = 0;
 	recvData(fd,1,&ones);
+	if(ones!=0xFF)
+		glflag = 0;
 	printf("Reading 0x01 register: 0x%02x\n",ones);
 	
 	uint8_t out[4096];
@@ -274,7 +197,7 @@ int main(int argc, char *argv[])
 	usleep(1000);
 	getRegister(fd,0x7c,600,out);
 	usleep(1000);
-	for(int i=0; i < 50; i++) {
+	for(int i=0; i < 3; i++) {
 	getRegister(fd,0x7d,800,out);
 	printf("Cycle #%d\n",i);
 	}
@@ -285,25 +208,61 @@ int main(int argc, char *argv[])
 	sendCommand(fd,0x01,0x01);
 	ones = 0;
 	recvData(fd,1,&ones);
+	if(ones!=0xFF)
+		glflag = 0;
 	printf("Reading 0x01 register: 0x%02x\n",ones);
 	
 	sendCommand(fd,0x00,0x01);
 	zeroes = 0;
 	recvData(fd,1,&zeroes);
+	if(zeroes!=0x00)
+		glflag = 0;
 	printf("Reading 0x00 register: 0x%02x\n",zeroes);
 	
 	sendCommand(fd,0x00,0x01);
 	zeroes = 0;
 	recvData(fd,1,&zeroes);
+	if(zeroes!=0x00)
+		glflag = 0;
 	printf("Reading 0x00 register: 0x%02x\n",zeroes);
 	
 	sendCommand(fd,0x00,0x01);
 	zeroes = 0;
 	recvData(fd,1,&zeroes);
+	if(zeroes!=0x00)
+		glflag = 0;
 	printf("Reading 0x00 register: 0x%02x\n",zeroes);
 	
-
+	for(int y=0; y<100; y++)
+	for(int j=0; j<8; j++) {
+		uint8_t tvg[150];
+		for(int i=0; i<150; i++) {
+			tvg[i] = i + j;
+		}
+		setRegister(fd,0x40 + j,150,tvg);
+		uint8_t read_tvg[150];
+		getRegister(fd,0x40 + j,150,read_tvg);
+		uint8_t flag = 1;
+		for(int k=0; k<150; k++) {
+			if(tvg[k] != read_tvg[k]) {
+				flag = 0;
+				glflag = 0;
+			} 
+		}
+		if(flag) {
+			printf("\nRead OK!     \n");
+		} else {
+			printf("\n\n\nRead not OK	!\n");
+		}
+	}
+	
+	if(glflag) {
+		printf("\nGL Read OK!     \n");
+	} else {
+		printf("\n\n\nGL Read not OK	!\n");
+	}
+	
 	close(fd);
 
-	return ret;
+	return 0;
 }
