@@ -50,6 +50,8 @@ static void sendCommand(int fd, uint8_t commandByte, uint8_t length) {
 static void sendData(int fd, uint8_t length,const uint8_t * bufPtr) {
 	uint8_t rx[4096];
 	
+	memset(rx,0x00,4096);
+	
 	struct spi_ioc_transfer tr = {
 		.tx_buf = (unsigned long)bufPtr,
 		.rx_buf = (unsigned long)rx,
@@ -68,9 +70,7 @@ static void sendData(int fd, uint8_t length,const uint8_t * bufPtr) {
 static void recvData(int fd, uint32_t length, uint8_t * bufPtr) {
 	uint8_t tx[4096];
 	
-	for(int i=0; i<4096; i++) {
-		tx[i] = 0x00;
-	}
+	memset(tx,0x00,4096);
 	
 	struct spi_ioc_transfer tr = {
 		.tx_buf = (unsigned long)tx,
@@ -259,7 +259,7 @@ int main(int argc, char *argv[])
 	recvData(fd,1,&ones);
 	printf("Reading 0x01 register: 0x%02x\n",ones);
 	
-	uint8_t out[512];
+	uint8_t out[4096];
 	usleep(1000);
 	getRegister(fd,0x7c,32,out);
 	usleep(1000);
@@ -269,10 +269,14 @@ int main(int argc, char *argv[])
 	usleep(1000);
 	getRegister(fd,0x7d,128,out);
 	usleep(1000);
-	getRegister(fd,0x7c,200,out);
+	getRegister(fd,0x7c,600,out);
 	usleep(1000);
-	getRegister(fd,0x7d,32,out);
+	for(int i=0; i < 50; i++) {
+	getRegister(fd,0x7d,800,out);
+	printf("Cycle #%d\n",i);
+	}
 	usleep(1000);
+	getRegister(fd,0x7c,128,out);
 	
 	
 	sendCommand(fd,0x01,0x01);
