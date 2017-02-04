@@ -21,8 +21,8 @@ static void pabort(const char *s)
 static const char *device = "/dev/spidev0.1";
 static uint8_t mode;
 static uint8_t bits = 8;
-static uint32_t speed = 30000;
-static uint16_t delay;
+static uint32_t speed = 70000;
+static uint16_t delay = 100;
 
 static void sendCommand(int fd, uint8_t commandByte, uint8_t length) {
 	uint8_t tx[2] = { commandByte, length };
@@ -32,9 +32,10 @@ static void sendCommand(int fd, uint8_t commandByte, uint8_t length) {
 		.tx_buf = (unsigned long)tx,
 		.rx_buf = (unsigned long)rx,
 		.len = ARRAY_SIZE(tx),
-		.delay_usecs = 0,
+		.delay_usecs = delay,
 		.speed_hz = speed,
 		.bits_per_word = bits,
+		.cs_change = 1,
 	};
 
 	printf("[tx: 0x%02x len: 0x%02x]\n",tx[0],tx[1]);
@@ -56,9 +57,10 @@ static void sendData(int fd, uint8_t length,const uint8_t * bufPtr) {
 		.tx_buf = (unsigned long)bufPtr,
 		.rx_buf = (unsigned long)rx,
 		.len = length,
-		.delay_usecs = 0,
+		.delay_usecs = delay,
 		.speed_hz = speed,
 		.bits_per_word = bits,
+		.cs_change = 1,
 	};
 	
 	int ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
@@ -76,9 +78,10 @@ static void recvData(int fd, uint32_t length, uint8_t * bufPtr) {
 		.tx_buf = (unsigned long)tx,
 		.rx_buf = (unsigned long)bufPtr,
 		.len = length,
-		.delay_usecs = 0,
+		.delay_usecs = delay,
 		.speed_hz = speed,
 		.bits_per_word = bits,
+		.cs_change = 1,
 	};
 	
 	int ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
